@@ -12,3 +12,5 @@ This repository contains a notebook demonstrating a movie recommender system. Th
 * numpy
 * scipy
 * sklearn
+
+Open MyRecommender.ipynb to start reading...
