@@ -1,0 +1,28 @@
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  width: 100%;
+  background-color: #111111;
+}
+
+body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background-color: #111111;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background-color: #111111;
+}
