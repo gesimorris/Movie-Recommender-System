@@ -32,11 +32,15 @@ export default function PlaylistGrid({ onSelectPlaylist, onNavigate }) {
         body: JSON.stringify(form)
       });
       const data = await response.json();
-      setPlaylists(prev => [...prev, data.playlist]);
-      setForm({ name: '', description: '' });
-      setShowCreate(false);
+      
+      // If backend returns { playlist: {id, name...} }
+      if (data.playlist) {
+        setPlaylists(prev => [...prev, data.playlist]);
+        setForm({ name: '', description: '' });
+        setShowCreate(false);
+      }
     } catch (err) {
-        console.error(err);
+      console.error("Create error:", err);
     }
   };
 
@@ -386,7 +390,8 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0,
+    opacity: 0.8, // Make it visible so you can actually click it!
+    transition: 'transform 0.2s',
   },
   playlistName: {
     margin: '0 0 4px',

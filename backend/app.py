@@ -1,80 +1,63 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, create_access_token
 import numpy as np
 import pandas as pd
-from scipy.sparse.linalg import svds
 import requests
-from dotenv import load_dotenv
 import os
-from datetime import timedelta
 import re
+from datetime import timedelta
+from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
-# ── Config ─────────────────────────────
-app.config['SQLALCHEMY_DATABASE_URI']        = os.getenv('DATABASE_URL')
+# Config
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///movies.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JWT_SECRET_KEY']                 = os.getenv('JWT_SECRET_KEY')
-app.config['JWT_ACCESS_TOKEN_EXPIRES']       = timedelta(days=7)
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'super-secret-key')
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 
-db  = SQLAlchemy(app)
+db = SQLAlchemy(app)
 jwt = JWTManager(app)
 
-TMDB_API_KEY  = os.getenv('TMDB_API_KEY')
+TMDB_API_KEY = os.getenv('TMDB_API_KEY')
 TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 
-poster_cache = {}
+genre_list = ['Action', 'Adventure', 'Animation', 'Childrens', 'Comedy', 
+              'Crime', 'Documentary', 'Drama', 'Fantasy', 'Film_Noir', 
+              'Horror', 'Musical', 'Mystery', 'Romance', 'Sci_Fi', 
+              'Thriller', 'War', 'Western']
 
-# ── DATABASE MODELS ─────────────────────────────
+# Models
 class User(db.Model):
     __tablename__ = 'users'
-    id            = db.Column(db.Integer, primary_key=True)
-    username      = db.Column(db.String(80), unique=True, nullable=False)
-    email         = db.Column(db.String(120), unique=True, nullable=False)
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
-
 
 class Playlist(db.Model):
     __tablename__ = 'playlists'
-    id          = db.Column(db.Integer, primary_key=True)
-    name        = db.Column(db.String(100), nullable=False)
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.String(300))
-    user_id     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    movies      = db.Column(db.JSON, default=list)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    movies = db.Column(db.JSON, default=list)
 
 with app.app_context():
     db.create_all()
 
-# ── LOAD DATA ─────────────────────────────
-column_names = ['user_id', 'item_id', 'rating', 'timestamp']
-df = pd.read_csv('u.data', sep='\t', names=column_names)
+# --- LOAD PRE-TRAINED DATA ---
+movie_metadata = pd.read_pickle('movie_metadata.pkl')
+X_pred = np.load('X_pred.npy')
+n_users, n_items = X_pred.shape
+
+# Load supporting CSVs for metadata
 movie_titles = pd.read_csv("Movie_Id_Titles")
-
-df = pd.merge(df, movie_titles, on='item_id')
-
-# Filter sparse data
-user_counts = df.groupby('user_id')['rating'].count()
-movie_counts = df.groupby('item_id')['rating'].count()
-df = df[df['user_id'].isin(user_counts[user_counts >= 50].index) &
-        df['item_id'].isin(movie_counts[movie_counts >= 10].index)]
-
-# Reindex
-df['user_id'] = pd.Categorical(df['user_id']).codes + 1
-df['item_id'] = pd.Categorical(df['item_id']).codes + 1
-
-# Movie stats
-movie_stats = df.groupby('item_id').agg(
-    avg_rating=('rating', 'mean'),
-    num_ratings=('rating', 'count')
-).reset_index()
-movie_stats = pd.merge(movie_stats, movie_titles, on='item_id')
-
-# Genre data
 movies_df = pd.read_csv('u.item', sep='|', encoding='latin-1', header=None)
 movies_df.columns = [
     'item_id','title','release_date','video_release','imdb_url',
@@ -83,211 +66,168 @@ movies_df.columns = [
     'Romance','Sci_Fi','Thriller','War','Western'
 ]
 
-# ── BUILD SVD MODEL ─────────────────────────────
-n_users = df['user_id'].nunique()
-n_items = df['item_id'].nunique()
-ratings_matrix = np.zeros((n_users, n_items))
+# --- AUTH ROUTES ---
+@app.route('/signup', methods=['POST'])
+def register():
+    print("DEBUG: Signup function triggered")
+    data = request.get_json()
+    print(f"DEBUG: Data received from frontend: {data}")
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
 
-for row in df.itertuples():
-    ratings_matrix[row.user_id - 1, row.item_id - 1] = row.rating
+    if User.query.filter_by(email=email).first():
+        return jsonify({"error": "Email already registered"}), 400
 
-u, s, vt = svds(ratings_matrix, k=20)
-X_pred = np.dot(np.dot(u, np.diag(s)), vt)
+    new_user = User(username=username, email=email, password_hash=password)
+    db.session.add(new_user)
+    db.session.commit()
+    
+    # Create token immediately so they are logged in after signup
+    access_token = create_access_token(identity=str(new_user.id))
+    
+    return jsonify({
+        "token": access_token,
+        "user": {"username": username, "email": email}
+    }), 201
 
-print("✅ SVD Ready")
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
 
-# ── HELPERS ─────────────────────────────
+    # Query by email now
+    user = User.query.filter_by(email=email).first()
+    
+    if user and user.password_hash == password:
+        access_token = create_access_token(identity=str(user.id))
+        return jsonify({
+            "token": access_token,
+            "user": {"username": user.username, "email": user.email}
+        }), 200
+    
+    return jsonify({"error": "Invalid email or password"}), 401
+
+# --- RECOMMENDATION LOGIC ---
 def get_poster(title):
-    if title in poster_cache:
-        return poster_cache[title]
-
+    clean_title = re.sub(r"\(\d{4}\)", "", title).strip()
     try:
-        # ✅ REMOVE YEAR (e.g. "Toy Story (1995)" → "Toy Story")
-        clean_title = re.sub(r"\(\d{4}\)", "", title).strip()
-
-        response = requests.get(
-            f'{TMDB_BASE_URL}/search/movie',
-            params={
-                'api_key': TMDB_API_KEY,
-                'query': clean_title
-            },
-            timeout=5
-        )
-
-        data = response.json()
-
-        poster = None
+        res = requests.get(f'{TMDB_BASE_URL}/search/movie', params={'api_key': TMDB_API_KEY, 'query': clean_title}, timeout=3)
+        data = res.json()
         if data.get('results'):
             path = data['results'][0].get('poster_path')
-            if path:
-                poster = f'https://image.tmdb.org/t/p/w200{path}'
-
-        poster_cache[title] = poster
-        return poster
-
-    except Exception:
-        return None
-
-
-def hybrid_recommendations(user_id, user_ratings=None, genres=None, era=None, top_n=20):
-    user_index = int(user_id) - 1
-    user_scores = X_pred[user_index]
-
-    df_scores = pd.DataFrame({
-        'item_id': range(1, n_items + 1),
-        'svd_score': user_scores
-    })
-
-    merged = pd.merge(df_scores, movie_stats, on='item_id')
-    merged = pd.merge(merged, movies_df, on='item_id', suffixes=('_stats', '_meta'))
-
-    # ── Boost based on user ratings ──
-    if user_ratings:
-        watched_ids = []
-        for r in user_ratings:
-            item_id = r['item_id']
-            rating = r.get('rating', 0)
-            merged.loc[merged['item_id'] == item_id, 'svd_score'] += rating / 5.0
-            watched_ids.append(item_id)
-        # Optional: remove watched movies
-        merged = merged[~merged['item_id'].isin(watched_ids)]
-
-    # ── Genre filter ──
-    if genres:
-        valid = [g for g in genres if g in merged.columns]
-        if valid:
-            merged = merged[merged[valid].sum(axis=1) > 0]
-
-    # ── Era filter ──
-    if era:
-        merged['year'] = pd.to_datetime(merged['release_date'], errors='coerce').dt.year
-        merged = merged[(merged['year'] >= era['start']) & (merged['year'] <= era['end'])]
-
-    # ── Normalize and final score ──
-    merged['norm_rating'] = merged['avg_rating'] / 5.0
-    merged['final_score'] = 0.7 * merged['svd_score'] + 0.3 * merged['norm_rating']
-
-    results = []
-    for _, row in merged.sort_values('final_score', ascending=False).head(top_n).iterrows():
-        results.append({
-            'item_id': int(row['item_id']),
-            'title': row['title_stats'],
-            'score': round(float(row['final_score']), 2),
-            'poster': get_poster(row['title_stats']),
-            'avg_rating': round(float(row['avg_rating']), 2),
-            'num_ratings': int(row['num_ratings'])
-        })
-
-    return results
-
-# ── ROUTES ─────────────────────────────
-@app.route('/')
-def home():
-    return jsonify({'message': 'API running'})
+            return f'https://image.tmdb.org/t/p/w200{path}' if path else None
+    except: return None
 
 @app.route('/recommendations/hybrid', methods=['POST'])
 @jwt_required()
 def hybrid_route():
-    try:
-        user_id = get_jwt_identity()
-        data = request.get_json() or {}
-        results = hybrid_recommendations(
-            user_id=user_id,
-            user_ratings=data.get('user_ratings', []),
-            genres=data.get('genres'),
-            era=data.get('era'),
-            top_n=data.get('top_n', 20)
-        )
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+    
+    # 1. Base SVD Predictions (Global patterns)
+    user_idx = (int(user_id) - 1) % n_users 
+    user_scores = X_pred[user_idx]
+    
+    df_recs = movie_metadata.copy()
+    df_recs['score'] = df_recs['item_id'].apply(
+        lambda x: user_scores[x-1] if x <= n_items else 0
+    )
+
+    # 2. "EASY" BOOSTING (Personal context)
+    # We silently check the user's playlists to see what they've saved
+    user_playlists = Playlist.query.filter_by(user_id=user_id).all()
+    
+    # Track which genres the user has saved most often
+    genre_counts = {}
+    for pl in user_playlists:
+        for m in (pl.movies or []):
+            m_id = m.get('item_id')
+            # Look up the genres for this saved movie
+            meta = movie_metadata[movie_metadata['item_id'] == m_id]
+            if not meta.empty:
+                # genre_list = ['Action', 'Drama', 'Sci-Fi', etc.]
+                for g in genre_list: 
+                    if meta.iloc[0][g] == 1:
+                        genre_counts[g] = genre_counts.get(g, 0) + 1
+
+    # Apply a 10% boost for every time a genre appears in their library
+    if genre_counts:
+        def apply_boost(row):
+            boost = 1.0
+            for g, count in genre_counts.items():
+                if row[g] == 1:
+                    boost += (count * 0.1)
+            return row['score'] * boost
+            
+        df_recs['score'] = df_recs.apply(apply_boost, axis=1)
+
+    # 3. Apply manual filters (Only if coming from Discover page)
+    selected_genres = data.get('genres', [])
+    if selected_genres:
+        df_recs = df_recs[df_recs[selected_genres].any(axis=1)]
+
+    # 4. Return top results
+    top_movies = df_recs.sort_values('score', ascending=False).head(data.get('top_n', 20))
+    
+    return jsonify({
+        "movies": [{"item_id": int(r.item_id), "title": r.title, "poster": get_poster(r.title)} 
+                   for _, r in top_movies.iterrows()]
+    })
+# --- PLAYLIST ROUTES ---
+@app.route('/playlists', methods=['GET', 'POST'])
+@jwt_required()
+def handle_playlists():
+    user_id = get_jwt_identity()
+    
+    if request.method == 'GET':
+        pls = Playlist.query.filter_by(user_id=user_id).all()
+        # Wrap the list in a "playlists" key to match your React 'setPlaylists'
         return jsonify({
-            'status': 'success',
-            'type': 'hybrid',
-            'count': len(results),
-            'movies': results
+            "playlists": [{"id": p.id, "name": p.name, "movies": p.movies or []} for p in pls]
         })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/playlists', methods=['GET'])
-@jwt_required()
-def playlist_route():
-        try:
-            user_id = get_jwt_identity()
-            playlists = Playlist.query.filter_by(user_id=user_id).all()
-            results = []
-            for pl in playlists:
-                results.append({
-                    'id': pl.id,
-                    'name': pl.name,
-                    'description': pl.description,
-                    'movies': pl.movies
-                })
-            return jsonify({'status': 'success', 'playlists': results})
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)}), 500
-        
-@app.route('/playlists', methods=['POST'])
-@jwt_required()
-def create_playlist():
-    try:
-        user_id = get_jwt_identity()
+    
+    if request.method == 'POST':
         data = request.get_json()
-        name = data.get('name')
-        description = data.get('description', '')
-
-        if not name:
-            return jsonify({'status': 'error', 'message': 'Name is required'}), 400
-
-        new_playlist = Playlist(name=name, description=description, user_id=user_id)
-        db.session.add(new_playlist)
+        if not data or 'name' not in data:
+            return jsonify({"error": "Name is required"}), 400
+            
+        new_pl = Playlist(
+            name=data['name'], 
+            user_id=user_id,
+            movies=[] # Ensure this starts as an empty list
+        )
+        db.session.add(new_pl)
         db.session.commit()
-
+        
+        # Return the actual playlist object so React can display it instantly
         return jsonify({
-            'status': 'success',
-            'playlist': {
-                'id': new_playlist.id,
-                'name': new_playlist.name,
-                'description': new_playlist.description,
-                'movies': new_playlist.movies
+            "playlist": {
+                "id": new_pl.id,
+                "name": new_pl.name,
+                "movies": []
             }
         }), 201
 
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-    
-@app.route("/playlists/<int:playlist_id>/movies/<int:movie_id>", methods=["POST", "DELETE", "PUT"])
+@app.route('/playlists/<int:playlist_id>/movies', methods=['POST'])
 @jwt_required()
-def modify_playlist_movie(playlist_id, movie_id):
-    try:
-        user_id = get_jwt_identity()
-        playlist = Playlist.query.filter_by(id=playlist_id, user_id=user_id).first()
-        if not playlist:
-            return jsonify({"status": "error", "message": "Playlist not found"}), 404
-
-        if request.method == "POST":
-            if not any(m.get("item_id") == movie_id for m in playlist.movies):
-                playlist.movies.append({
-                    "item_id": movie_id,
-                    "title": request.json.get("title", "Unknown")
-                })
-                db.session.commit()
-            return jsonify({"status": "success", "message": "Movie added to playlist"})
-
-        elif request.method == "DELETE":
-            playlist.movies = [m for m in playlist.movies if m.get("item_id") != movie_id]
-            db.session.commit()
-            return jsonify({"status": "success", "message": "Movie removed from playlist"})
-
-        elif request.method == "PUT":
-            # Example: update title or metadata
-            for m in playlist.movies:
-                if m.get("item_id") == movie_id:
-                    m.update(request.json)
-                    db.session.commit()
-                    break
-            return jsonify({"status": "success", "message": "Movie updated in playlist"})
-
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+def add_to_playlist(playlist_id):
+    user_id = get_jwt_identity()
+    playlist = Playlist.query.filter_by(id=playlist_id, user_id=user_id).first_or_404()
+    
+    movie_data = request.get_json() # Should contain title, poster, item_id
+    
+    # Assuming your 'movies' column is a JSON type
+    current_movies = list(playlist.movies) if playlist.movies else []
+    current_movies.append(movie_data)
+    
+    playlist.movies = current_movies
+    db.session.commit()
+    
+    return jsonify({"msg": "Movie added", "playlist": playlist.name}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)
+
+
