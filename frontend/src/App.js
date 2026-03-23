@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
 import Auth from "./components/Auth";
@@ -6,6 +6,8 @@ import Home from "./components/Home";
 import Discover from "./components/Discover";
 import PlaylistGrid from "./components/PlaylistGrid";
 import PlaylistDetail from "./components/PlaylistDetail";
+import Footer from "./components/footer";
+import API_BASE_URL from "./config";
 
 export default function App() {
   const { loading, isLoggedIn, authFetch } = useAuth();
@@ -16,6 +18,15 @@ export default function App() {
   const [movieToAdd, setMovieToAdd]       = useState(null);
   const [playlists, setPlaylists]         = useState([]);
   const [showAddTo, setShowAddTo]         = useState(false);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      authFetch(`${API_BASE_URL}/playlists`)
+        .then(res => res.json())
+        .then(data => setPlaylists(data.playlists || []))
+        .catch(err => console.error(err));
+    }
+  }, [isLoggedIn]);
 
   if (loading) return (
     <div style={styles.loading}>
@@ -37,68 +48,86 @@ export default function App() {
       setShowAuth(true);
       return;
     }
-    // Load playlists then show picker
-    const response = await authFetch('http://127.0.0.1:5000/playlists');
-    const data     = await response.json();
-    setPlaylists(data.playlists || []);
-    setMovieToAdd(movie);
-    setShowAddTo(true);
+    try {
+      const list = await authFetch(`${API_BASE_URL}/playlists`, {
+        method: 'GET'
+      });
+      const data = await list.json();
+      if (data.playlists) {
+        setPlaylists(data.playlists);
+      }
+      setMovieToAdd(movie); 
+      setShowAddTo(true);    
+    } catch (err) {
+      console.error("Failed to fetch playlists:", err);
+      alert("Could not load playlists. Please try again.");
+    }
   };
 
   const addToPlaylist = async (playlistId) => {
+    if (!playlistId || !movieToAdd) return;
     try {
-      const response = await authFetch(
-        `http://127.0.0.1:5000/playlists/${playlistId}/movies`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ movie: movieToAdd })
-        }
-      );
-      const data = await response.json();
+      const response = await authFetch(`${API_BASE_URL}/playlists/${playlistId}/movies`, {
+        method: 'POST',
+        body: JSON.stringify({
+          item_id: movieToAdd.item_id,
+          title: movieToAdd.title,
+          poster: movieToAdd.poster,
+          avg_rating: movieToAdd.avg_rating,
+          num_ratings: movieToAdd.num_ratings,
+        })
+      });
+
       if (response.ok) {
+        alert(`Saved ${movieToAdd.title}!`);
         setShowAddTo(false);
         setMovieToAdd(null);
-      } else {
-        alert(data.error);
+        const res = await authFetch(`${API_BASE_URL}/playlists`);
+        const plData = await res.json();
+        setPlaylists(plData.playlists);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Save error:", err);
     }
   };
 
   return (
     <div style={styles.app}>
-
-      {/* Sidebar */}
+      {/* Sidebar - Fixed to the left */}
       <Sidebar currentPage={page} onNavigate={navigate} />
 
-      {/* Main content */}
+      {/* Main content - Scrollable area */}
       <div style={styles.main}>
-        {page === 'home' && (
-          <Home onNavigate={navigate} />
-        )}
-        {page === 'discover' && (
-          <Discover onSaveMovie={handleSaveMovie} />
-        )}
-        {page === 'playlists' && !selectedPlaylist && (
-          <PlaylistGrid
-            onSelectPlaylist={(p) => {
-              setPlaylist(p);
-              setPage('playlists');
-            }}
-            onNavigate={navigate}
-          />
-        )}
-        {page === 'playlists' && selectedPlaylist && (
-          <PlaylistDetail
-            playlist={selectedPlaylist}
-            onBack={() => setPlaylist(null)}
-            onUpdate={(updated) => setPlaylist(updated)}
-          />
-        )}
+        <div style={styles.contentArea}>
+          {page === 'home' && (
+            <Home onNavigate={navigate} />
+          )}
+          {page === 'discover' && (
+            <Discover onSaveMovie={handleSaveMovie} />
+          )}
+          {page === 'playlists' && !selectedPlaylist && (
+            <PlaylistGrid
+              onSelectPlaylist={(p) => {
+                setPlaylist(p);
+                setPage('playlists');
+              }}
+              onNavigate={navigate}
+            />
+          )}
+          {page === 'playlists' && selectedPlaylist && (
+            <PlaylistDetail
+              playlist={selectedPlaylist}
+              onBack={() => setPlaylist(null)}
+              onUpdate={(updated) => setPlaylist(updated)}
+            />
+          )}
+        </div>
+
+        {/* Footer */}
+        <Footer />
       </div>
 
-      {/* Auth Modal */}
+      {/* Auth Modal Overlay */}
       {showAuth && (
         <Auth
           onClose={() => setShowAuth(false)}
@@ -106,7 +135,7 @@ export default function App() {
         />
       )}
 
-      {/* Add to playlist picker */}
+      {/* Add to playlist picker overlay */}
       {showAddTo && movieToAdd && (
         <div style={styles.overlay}>
           <div style={styles.picker}>
@@ -118,16 +147,12 @@ export default function App() {
                   setMovieToAdd(null);
                 }}
                 style={styles.pickerClose}
-              >
-                ✕
-              </button>
+              >✕</button>
             </div>
             <p style={styles.pickerMovie}>{movieToAdd.title}</p>
 
             {playlists.length === 0 ? (
-              <p style={styles.noPlaylists}>
-                No playlists yet — go to Library to create one
-              </p>
+              <p style={styles.noPlaylists}>No playlists yet — go to Library to create one</p>
             ) : (
               <div style={styles.pickerList}>
                 {playlists.map(playlist => (
@@ -136,23 +161,16 @@ export default function App() {
                     onClick={() => addToPlaylist(playlist.id)}
                     style={styles.pickerItem}
                   >
-                    {/* Mini cover */}
                     <div style={styles.miniCover}>
                       {playlist.movies?.[0]?.poster ? (
-                        <img
-                          src={playlist.movies[0].poster}
-                          alt={playlist.name}
-                          style={styles.miniCoverImg}
-                        />
+                        <img src={playlist.movies[0].poster} alt="" style={styles.miniCoverImg} />
                       ) : (
                         <span style={{ fontSize: '16px' }}>🎬</span>
                       )}
                     </div>
                     <div style={styles.pickerInfo}>
                       <p style={styles.pickerName}>{playlist.name}</p>
-                      <p style={styles.pickerCount}>
-                        {playlist.movies?.length || 0} movies
-                      </p>
+                      <p style={styles.pickerCount}>{playlist.movies?.length || 0} movies</p>
                     </div>
                   </button>
                 ))}
@@ -161,7 +179,6 @@ export default function App() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
@@ -179,21 +196,25 @@ const styles = {
   },
   app: {
     display: 'flex',
-    height: '100vh',          // ← was minHeight
-    width: '100vw',              // ← add this
-    overflow: 'hidden',       // ← add this
+    height: '100vh',
+    width: '100vw',
+    overflow: 'hidden',
     backgroundColor: '#111111',
-    position: 'fixed',           // ← add this
+    position: 'fixed',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   },
   main: {
     marginLeft: '220px',
     flex: 1,
-    height: '100vh',          // ← was minHeight
-    overflowY: 'auto',        // ← scrolls only the main content
-    backgroundColor: '#111111',  // ← add this
-    paddingTop: 0,               // ← add this
-    marginTop: 0,                // ← add this
+    height: '100vh',
+    overflowY: 'auto',
+    backgroundColor: '#111111',
+    display: 'flex',       // Added to help Footer placement
+    flexDirection: 'column' // Added to help Footer placement
+  },
+  contentArea: {
+    flex: 1, // This pushes the footer down
+    minHeight: 'fit-content'
   },
   overlay: {
     position: 'fixed',

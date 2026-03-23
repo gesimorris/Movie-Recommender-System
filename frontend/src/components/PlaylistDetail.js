@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import API_BASE_URL from "../config";
 
 export default function PlaylistDetail({ playlist, onBack, onUpdate }) {
   const { authFetch }           = useAuth();
@@ -13,35 +14,45 @@ export default function PlaylistDetail({ playlist, onBack, onUpdate }) {
   const saveEdits = async () => {
     try {
       const response = await authFetch(
-        `http://127.0.0.1:5000/playlists/${playlist.id}/movies/${movies.length > 0 ? movies[0].item_id : '0'}`,
+        `${API_BASE_URL}/playlists/${playlist.id}`,
         {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(form)
         }
       );
-      const data = await response.json();
-      onUpdate(data.playlist);
-      setEditing(false);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const updatedPlaylist = { ...data.playlist, movies: movies };
+        onUpdate(updatedPlaylist); 
+        setEditing(false);
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Update failed:", err);
     }
   };
 
   const removeMovie = async (movieId) => {
     try {
-      await authFetch(
-        `http://127.0.0.1:5000/playlists/${playlist.id}/movies/${movieId}`,
+      const response = await authFetch(
+        `${API_BASE_URL}/playlists/${playlist.id}/movies/${movieId}`,
         { method: 'DELETE' }
       );
-      const updated = movies.filter(m => m.item_id !== movieId);
-      setMovies(updated);
-      onUpdate({ ...playlist, movies: updated });
+  
+      if (response.ok) {
+        const updatedMovies = movies.filter(m => m.item_id !== movieId);
+        setMovies(updatedMovies);
+        onUpdate({ ...playlist, movies: updatedMovies });
+      } else {
+        const errData = await response.json();
+        alert(errData.error || "Could not remove movie");
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Delete failed:", err);
     }
   };
 
-  // Cover = first movie poster or gradient
   const cover = movies.length > 0 && movies[0].poster
     ? movies[0].poster
     : null;
@@ -136,11 +147,14 @@ export default function PlaylistDetail({ playlist, onBack, onUpdate }) {
               />
               <div style={styles.movieInfo}>
                 <p style={styles.movieTitle}>{movie.title}</p>
-                <p style={styles.movieMeta}>
-                  ⭐ {movie.avg_rating}
-                  <span style={styles.dot}>·</span>
-                  {movie.num_ratings} ratings
-                </p>
+                <span style={styles.star}>⭐</span>
+                <span style={styles.ratingText}>
+                  {movie.avg_rating ? movie.avg_rating.toFixed(1) : "N/A"}
+                </span>
+                <span style={styles.dot}>·</span>
+                <span style={styles.countText}>
+                  {movie.num_ratings || 0} reviews
+                </span>
               </div>
               <button
                 onClick={() => removeMovie(movie.item_id)}
@@ -342,5 +356,16 @@ const styles = {
     cursor: 'pointer',
     padding: '4px 8px',
     flexShrink: 0,
+  },
+  ratingText: {
+    fontSize: '12px',
+    color: 'white',
+  },
+  star: {
+    fontSize: '12px',
+  },
+  countText: {
+    fontSize: '12px',
+    color: 'rgba(255,255,255,0.4)',
   },
 };

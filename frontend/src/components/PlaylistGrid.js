@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import API_BASE_URL from "../config";
 
 export default function PlaylistGrid({ onSelectPlaylist, onNavigate }) {
   const { authFetch, isLoggedIn }     = useAuth();
@@ -15,7 +16,7 @@ export default function PlaylistGrid({ onSelectPlaylist, onNavigate }) {
   const fetchPlaylists = async () => {
     setLoading(true);
     try {
-      const response = await authFetch('http://127.0.0.1:5000/playlists');
+      const response = await authFetch(`${API_BASE_URL}/playlists`);
       const data     = await response.json();
       setPlaylists(data.playlists || []);
     } catch (err) {
@@ -27,13 +28,12 @@ export default function PlaylistGrid({ onSelectPlaylist, onNavigate }) {
   const createPlaylist = async () => {
     if (!form.name.trim()) return;
     try {
-      const response = await authFetch('http://127.0.0.1:5000/playlists', {
+      const response = await authFetch(`${API_BASE_URL}/playlists`, {
         method: 'POST',
         body: JSON.stringify(form)
       });
       const data = await response.json();
       
-      // If backend returns { playlist: {id, name...} }
       if (data.playlist) {
         setPlaylists(prev => [...prev, data.playlist]);
         setForm({ name: '', description: '' });
@@ -46,19 +46,21 @@ export default function PlaylistGrid({ onSelectPlaylist, onNavigate }) {
 
   const deletePlaylist = async (e, playlistId) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this playlist?')) return;
+    if (!window.confirm("Are you sure you want to delete this playlist?")) return;
     try {
-      await authFetch(
-        `http://127.0.0.1:5000/playlists/${playlistId}`,
-        { method: 'DELETE' }
-      );
-      setPlaylists(prev => prev.filter(p => p.id !== playlistId));
+      const response = await authFetch(`${API_BASE_URL}/playlists/${playlistId}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (data.success) {
+        setPlaylists(prev => prev.filter(p => p.id !== playlistId));
+      } else {
+        alert(data.error || "Could not delete playlist");
+      }
     } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Get cover from first movie poster
+      alert("Error:", err.message || "Could not delete playlist");}
+    };
+  
   const getCover = (playlist) => {
     if (playlist.movies?.length > 0 && playlist.movies[0].poster) {
       return playlist.movies[0].poster;

@@ -1,6 +1,6 @@
-// src/components/Discover.js
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import API_BASE_URL from "../config";
 
 const GENRES = [
   "Action", "Adventure", "Animation", "Childrens",
@@ -23,7 +23,7 @@ export default function Discover({ onSaveMovie }) {
   const [selectedEra, setEra] = useState(null);
   const [movies, setMovies] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [hoveredId, setHoveredId] = useState(null); // Fix for hover overlay
+  const [hoveredId, setHoveredId] = useState(null);
 
   const toggleGenre = (genre) => {
     setGenres(prev =>
@@ -43,28 +43,27 @@ export default function Discover({ onSaveMovie }) {
     
     const payload = {
       genres: selectedGenres,
-      era: selectedEra,
-      top_n: 20
+      eras: selectedEra ? [selectedEra] : [], 
+      top_n: 50
     };
 
     try {
-      const response = await authFetch('http://127.0.0.1:5000/recommendations/hybrid', {
+      const response = await authFetch(`${API_BASE_URL}/recommendations/hybrid`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       const data = await response.json();
 
-      // FIXED: The backend sends { "movies": [...] }, not a status field
       if (data.movies) {
         setMovies(data.movies);
-      } else {
-        console.error('No movies found in response', data);
       }
     } catch (err) {
       console.error("Fetch error:", err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -160,7 +159,21 @@ export default function Discover({ onSaveMovie }) {
                       </button>
                     </div>
                   </div>
-                  <p style={styles.movieTitle}>{movie.title}</p>
+                  
+                  {/* Updated Title and Ratings Section */}
+                  <div style={styles.movieInfo}>
+                    <p style={styles.movieTitle}>{movie.title}</p>
+                    <div style={styles.ratingRow}>
+                      <span style={styles.star}>⭐</span>
+                      <span style={styles.ratingText}>
+                        {movie.avg_rating ? movie.avg_rating.toFixed(1) : "N/A"}
+                      </span>
+                      <span style={styles.dot}>·</span>
+                      <span style={styles.countText}>
+                        {movie.num_ratings || 0} reviews
+                      </span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -193,5 +206,13 @@ const styles = {
   poster: { width: '100%', height: '100%', objectFit: 'cover' },
   overlay: { position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity 0.2s' },
   saveBtn: { padding: '10px 20px', backgroundColor: 'white', color: '#111111', border: 'none', borderRadius: '20px', fontWeight: '700', cursor: 'pointer' },
-  movieTitle: { marginTop: '10px', fontSize: '14px', fontWeight: '500', color: 'white', textAlign: 'center' },
+  
+  // New Styles for Info section
+  movieInfo: { marginTop: '12px' },
+  movieTitle: { margin: '0 0 4px', fontSize: '14px', fontWeight: '600', color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  ratingRow: { display: 'flex', alignItems: 'center', gap: '4px' },
+  star: { fontSize: '12px' },
+  ratingText: { fontSize: '13px', color: 'white', fontWeight: '500' },
+  dot: { fontSize: '12px', color: 'rgba(255,255,255,0.3)', margin: '0 2px' },
+  countText: { fontSize: '12px', color: 'rgba(255,255,255,0.4)' },
 };
