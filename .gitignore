@@ -1,0 +1,16 @@
+# Credentials (CRITICAL: Do not upload these!)
+.env
+
+# Python files
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+
+# Data Files (OPTIONAL)
+# If these files are over 100MB, GitHub will reject them. 
+# But for Render to work, they MUST be on GitHub.
+# Only uncomment these if you are using Git LFS.
+# movie_metadata.pkl
+# X_pred.npy
