@@ -157,6 +157,7 @@ def get_poster(title):
     except: return None
 
 @app.route('/recommendations/hybrid', methods=['POST'])
+@app.route('/recommendations/hybrid/', methods=['POST', 'OPTIONS'])
 @jwt_required(optional=True)
 def hybrid_route():
     user_id = get_jwt_identity() 
