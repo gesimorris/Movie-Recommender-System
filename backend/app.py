@@ -26,10 +26,13 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'super-secret-key')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 
-CORS(app, supports_credentials=True, resources={r"/*": {"origins": [
-    "http://localhost:3000",
-    "https://cinemax-10awozl29-gesimorris-projects.vercel.app"
-]}})
+CORS(app, supports_credentials=True, resources={r"/*": {
+    "origins": [
+        "http://localhost:3000",
+        "https://cinemax-ffwl.onrender.com",
+        re.compile(r"https://cinemax-.*\.vercel\.app") 
+    ]
+}})
 
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
