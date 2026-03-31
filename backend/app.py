@@ -28,7 +28,7 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 
 CORS(app, supports_credentials=True, resources={r"/*": {"origins": [
     "http://localhost:3000",
-    "https://cinemax-ffwl.onrender.com"
+    "https://cinemax-10awozl29-gesimorris-projects.vercel.app"
 ]}})
 
 db = SQLAlchemy(app)
