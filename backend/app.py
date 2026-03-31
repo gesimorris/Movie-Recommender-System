@@ -12,10 +12,20 @@ import re
 import pickle
 from datetime import timedelta
 from dotenv import load_dotenv
+from flask import Response
 
 load_dotenv()
 
 app = Flask(__name__)
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        res = Response()
+        res.headers['Access-Control-Allow-Origin'] = '*'
+        res.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        res.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return res
 
 db_url = os.getenv('DATABASE_URL')
 if db_url and db_url.startswith("postgres://"):
