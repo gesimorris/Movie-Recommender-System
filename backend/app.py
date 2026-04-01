@@ -23,7 +23,7 @@ def handle_preflight():
     if request.method == "OPTIONS":
         res = Response()
         res.headers['Access-Control-Allow-Origin'] = '*'
-        res.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        res.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, PUT, OPTIONS'
         res.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         return res
 
