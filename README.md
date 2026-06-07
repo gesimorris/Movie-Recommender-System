@@ -24,6 +24,7 @@ Uses a hybrid recommendation engine combining:
 
 ## Live Demo
 Link: https://cinemax-blond-ten.vercel.app/
+
 Demo account: demo@test.com / password123
 
 ## Run Locally
