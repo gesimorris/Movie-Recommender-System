@@ -37,3 +37,8 @@ cd frontend
 npm install && npm run dev
 ```
 ## Screenshots
+<img width="1159" height="801" alt="Screenshot 2026-06-12 at 12 16 51 PM" src="https://github.com/user-attachments/assets/b5915674-7c26-4762-b35c-9febbdd97c0f" />
+<img width="1209" height="830" alt="Screenshot 2026-06-12 at 12 17 09 PM" src="https://github.com/user-attachments/assets/e9429bcb-78e7-4081-b426-69762527ff75" />
+<img width="1445" height="835" alt="Screenshot 2026-06-12 at 12 17 53 PM" src="https://github.com/user-attachments/assets/15ec1a88-3db8-40b7-88be-a679855d336e" />
+
+
